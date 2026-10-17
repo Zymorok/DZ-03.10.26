@@ -1,0 +1,17 @@
+{
+  "cli": {
+    "version": ">= 24.8.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_CONVEX_URL": "https://academic-starfish-131.convex.cloud"
+      }
+    }
+  }
+}

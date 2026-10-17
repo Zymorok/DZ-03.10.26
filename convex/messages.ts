@@ -1,0 +1,136 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { v } from "convex/values";
+import { Id } from "./_generated/dataModel";
+import { mutation, MutationCtx, query } from "./_generated/server";
+
+async function updateLastMessage(ctx: MutationCtx, roomId: Id<"chatRooms">) {
+  const last = await ctx.db
+    .query("messages")
+    .withIndex("by_chat_room", (q) => q.eq("chatRoomId", roomId))
+    .order("desc")
+    .first();
+  await ctx.db.patch(roomId, {
+    lastMessage: last
+      ? `${last.senderName}: ${last.imageUrl ? "📷 Фото" + (last.content ? " — " + last.content : "") : last.content}`
+      : undefined,
+    lastMessageAt: last?._creationTime,
+  });
+}
+
+export const listMessages = query({
+  args: { chatRoomId: v.string() },
+  handler: async (ctx, args) => {
+    if (!(await getAuthUserId(ctx))) return [];
+    const id = ctx.db.normalizeId("chatRooms", args.chatRoomId);
+    if (!id || !(await ctx.db.get(id))) return [];
+    return await ctx.db
+      .query("messages")
+      .withIndex("by_chat_room", (q) => q.eq("chatRoomId", id))
+      .order("asc")
+      .collect();
+  },
+});
+
+export const sendMessage = mutation({
+  args: { chatRoomId: v.id("chatRooms"), content: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Потрібно увійти в акаунт");
+    const user = await ctx.db.get(userId);
+    if (!user || !(await ctx.db.get(args.chatRoomId)))
+      throw new Error("Кімнату не знайдено");
+    const content = args.content.trim();
+    if (!content || content.length > 2000)
+      throw new Error("Повідомлення має містити від 1 до 2000 символів");
+    const id = await ctx.db.insert("messages", {
+      chatRoomId: args.chatRoomId,
+      senderId: userId,
+      senderName: user.fullname || user.name || user.email || "Користувач",
+      senderPhoto: user.image,
+      content,
+    });
+    await updateLastMessage(ctx, args.chatRoomId);
+    return id;
+  },
+});
+
+export const editMessage = mutation({
+  args: { messageId: v.id("messages"), content: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Потрібно увійти в акаунт");
+    const message = await ctx.db.get(args.messageId);
+    if (!message || message.senderId !== userId)
+      throw new Error("Можна редагувати лише власні повідомлення");
+    const content = args.content.trim();
+    if ((!content && !message.imageUrl) || content.length > 2000)
+      throw new Error("Перевірте текст повідомлення");
+    await ctx.db.patch(message._id, {
+      content: content || undefined,
+      isEdited: true,
+    });
+    await updateLastMessage(ctx, message.chatRoomId);
+  },
+});
+
+export const deleteMessage = mutation({
+  args: { messageId: v.id("messages") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Потрібно увійти в акаунт");
+    const message = await ctx.db.get(args.messageId);
+    if (!message || message.senderId !== userId)
+      throw new Error("Можна видаляти лише власні повідомлення");
+    if (message.storageId) await ctx.storage.delete(message.storageId);
+    await ctx.db.delete(message._id);
+    await updateLastMessage(ctx, message.chatRoomId);
+  },
+});
+
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    if (!(await getAuthUserId(ctx)))
+      throw new Error("Потрібно увійти в акаунт");
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const sendMediaMessage = mutation({
+  args: {
+    chatRoomId: v.id("chatRooms"),
+    storageId: v.id("_storage"),
+    caption: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Потрібно увійти в акаунт");
+    const user = await ctx.db.get(userId);
+    if (!user || !(await ctx.db.get(args.chatRoomId)))
+      throw new Error("Кімнату не знайдено");
+    const file = await ctx.db.system.get(args.storageId);
+    if (
+      !file ||
+      !file.contentType?.startsWith("image/") ||
+      file.size > 10 * 1024 * 1024
+    ) {
+      throw new Error("Оберіть зображення розміром до 10 МБ");
+    }
+    const content = args.caption?.trim();
+    if (content && content.length > 2000)
+      throw new Error("Підпис має містити до 2000 символів");
+    const imageUrl = await ctx.storage.getUrl(args.storageId);
+    if (!imageUrl) throw new Error("Зображення не знайдено");
+    const id = await ctx.db.insert("messages", {
+      chatRoomId: args.chatRoomId,
+      senderId: userId,
+      senderName: user.fullname || user.name || user.email || "Користувач",
+      senderPhoto: user.image,
+      content: content || undefined,
+      storageId: args.storageId,
+      imageUrl,
+    });
+    await updateLastMessage(ctx, args.chatRoomId);
+    return id;
+  },
+});
