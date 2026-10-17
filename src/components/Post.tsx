@@ -116,13 +116,13 @@ export const Post = ({ post, index }: PostProps) => {
     // 🚀 Запуск пружини у UI-потоці:
     if (nextIsLiked) {
       likeScale.set(withSequence(
-        withSpring(1.35, { damping: 7, stiffness: 260 }),
-        withSpring(1, { damping: 10, stiffness: 180 })
+        withTiming(1.3, { duration: 100 }),
+        withSpring(1, { duration: 300, dampingRatio: 0.7 })
       ));
     } else {
       likeScale.set(withSequence(
-        withSpring(0.85, { damping: 8, stiffness: 200 }),
-        withSpring(1, { damping: 12, stiffness: 180 })
+        withTiming(0.85, { duration: 100 }),
+        withSpring(1, { duration: 300, dampingRatio: 0.7 })
       ));
     }
 
