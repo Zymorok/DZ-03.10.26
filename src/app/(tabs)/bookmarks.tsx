@@ -44,7 +44,7 @@ export default function BookmarksScreen() {
             Немає збережених публікацій
           </Text>
           <Text className="text-grey text-sm text-center">
-            Публікації, які ви додасте у закладки, з'являться тут.
+            {"Публікації, які ви додасте у закладки, з'являться тут."}
           </Text>
         </View>
       ) : (

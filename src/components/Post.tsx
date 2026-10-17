@@ -53,8 +53,9 @@ export type PostProps = {
 export const Post = ({ post, index }: PostProps) => {
   const router = useRouter();
 
-  const [isLiked, setIsLiked] = useState(post.isLiked);
-  const [likesCount, setLikesCount] = useState(post.likes);
+  const isLiked = post.isLiked;
+  const likesCount = post.likes;
+  const [liking, setLiking] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(post.isBookmarked);
   const [commentsCount, setCommentsCount] = useState(post.comments);
   const [showComments, setShowComments] = useState(false);
@@ -64,7 +65,7 @@ export const Post = ({ post, index }: PostProps) => {
   const likeScale = useSharedValue(1);
 
   const animatedLikeStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: likeScale.value }],
+    transform: [{ scale: likeScale.get() }],
   }));
 
   // Reanimated: Завдання 2 - Каскадна поява постів у стрічці (Fade-in + Slide-up)
@@ -108,37 +109,29 @@ export const Post = ({ post, index }: PostProps) => {
   const toggleBookmark = useMutation(api.bookmarks.toggleBookmark);
 
   const handleLike = async () => {
+    if (liking) return;
     const nextIsLiked = !isLiked;
-    const previousLikesCount = likesCount;
-
-    setIsLiked(nextIsLiked);
-    setLikesCount((prev) => (nextIsLiked ? prev + 1 : Math.max(0, prev - 1)));
+    setLiking(true);
 
     // 🚀 Запуск пружини у UI-потоці:
     if (nextIsLiked) {
-      likeScale.value = withSequence(
+      likeScale.set(withSequence(
         withSpring(1.35, { damping: 7, stiffness: 260 }),
         withSpring(1, { damping: 10, stiffness: 180 })
-      );
+      ));
     } else {
-      likeScale.value = withSequence(
+      likeScale.set(withSequence(
         withSpring(0.85, { damping: 8, stiffness: 200 }),
         withSpring(1, { damping: 12, stiffness: 180 })
-      );
+      ));
     }
 
     try {
-      const serverIsLiked = await toggleLike({ postId: post._id });
-      if (serverIsLiked !== nextIsLiked) {
-        setIsLiked(serverIsLiked);
-        setLikesCount((prev) =>
-          serverIsLiked ? prev + 1 : Math.max(0, prev - 1),
-        );
-      }
+      await toggleLike({ postId: post._id });
     } catch (error) {
       console.error("Помилка оновлення лайка:", error);
-      setIsLiked(post.isLiked);
-      setLikesCount(previousLikesCount);
+    } finally {
+      setLiking(false);
     }
   };
 
@@ -205,7 +198,14 @@ export const Post = ({ post, index }: PostProps) => {
       {/* Кнопки дій */}
       <View className="flex-row items-center justify-between px-3 py-3">
         <View className="flex-row items-center gap-4">
-          <TouchableOpacity onPress={handleLike} activeOpacity={0.7}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={isLiked ? "Зняти вподобання" : "Вподобати"}
+            accessibilityState={{ disabled: liking, selected: isLiked }}
+            disabled={liking}
+            onPress={handleLike}
+            activeOpacity={0.7}
+          >
             <Animated.View style={animatedLikeStyle}>
               <Ionicons
                 name={isLiked ? "heart" : "heart-outline"}

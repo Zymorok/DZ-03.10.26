@@ -3,7 +3,7 @@
     "name": "Prostir 03.10",
     "slug": "prostir-dz0310",
     "owner": "xqzmyy",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "prostir0310",
@@ -21,7 +21,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "package": "com.xqzmyy.prostir03.preview",
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "versionCode": 2
     },
     "web": {
       "output": "static",
