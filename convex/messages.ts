@@ -17,6 +17,18 @@ async function updateLastMessage(ctx: MutationCtx, roomId: Id<"chatRooms">) {
   });
 }
 
+async function getReply(ctx: MutationCtx, roomId: Id<"chatRooms">, id?: Id<"messages">) {
+  if (!id) return {};
+  const message = await ctx.db.get(id);
+  if (!message || message.chatRoomId !== roomId)
+    throw new Error("Повідомлення для відповіді не знайдено в цій кімнаті");
+  return {
+    replyToId: message._id,
+    replyToSender: message.senderName,
+    replyToText: message.content || "📷 Фотографія",
+  };
+}
+
 export const listMessages = query({
   args: { chatRoomId: v.string() },
   handler: async (ctx, args) => {
@@ -32,7 +44,7 @@ export const listMessages = query({
 });
 
 export const sendMessage = mutation({
-  args: { chatRoomId: v.id("chatRooms"), content: v.string() },
+  args: { chatRoomId: v.id("chatRooms"), content: v.string(), replyToId: v.optional(v.id("messages")) },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Потрібно увійти в акаунт");
@@ -47,6 +59,7 @@ export const sendMessage = mutation({
       senderId: userId,
       senderName: user.fullname || user.name || user.email || "Користувач",
       senderPhoto: user.image,
+      ...await getReply(ctx, args.chatRoomId, args.replyToId),
       content,
     });
     await updateLastMessage(ctx, args.chatRoomId);
@@ -101,6 +114,7 @@ export const sendMediaMessage = mutation({
     chatRoomId: v.id("chatRooms"),
     storageId: v.id("_storage"),
     caption: v.optional(v.string()),
+    replyToId: v.optional(v.id("messages")),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -126,6 +140,7 @@ export const sendMediaMessage = mutation({
       senderId: userId,
       senderName: user.fullname || user.name || user.email || "Користувач",
       senderPhoto: user.image,
+      ...await getReply(ctx, args.chatRoomId, args.replyToId),
       content: content || undefined,
       storageId: args.storageId,
       imageUrl,

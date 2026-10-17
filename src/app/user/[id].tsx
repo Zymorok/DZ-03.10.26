@@ -10,6 +10,7 @@ import {
 import { useLocalSearchParams, useRouter, Stack } from "expo-router";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { ChatProfileStats } from "@/components/ChatProfileStats";
 import { Id } from "@/convex/_generated/dataModel";
 import { COLORS } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
@@ -72,6 +73,10 @@ export default function UserProfileScreen() {
         }}
       />
 
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Назад до розмови" onPress={() => router.back()} className="flex-row items-center gap-3 px-4 py-3 border-b border-surface">
+        <Ionicons name="arrow-back" size={24} color="white" />
+        <Text className="text-white font-bold">Профіль учасника</Text>
+      </TouchableOpacity>
       <ScrollView showsVerticalScrollIndicator={false} className="flex-1">
         <View className="p-4">
           <View className="flex-row items-center justify-between mb-4">
@@ -113,6 +118,9 @@ export default function UserProfileScreen() {
             ) : null}
           </View>
 
+          {profile.username ? <Text className="text-primary mb-3">@{profile.username}</Text> : null}
+          {isSelf ? <Text className="text-primary mb-3">Це ваш акаунт</Text> : null}
+          <ChatProfileStats stats={profile.stats} createdAt={profile._creationTime} />
           {isSelf ? (
             <TouchableOpacity
               onPress={() => router.push("/profile")}

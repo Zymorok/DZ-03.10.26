@@ -15,6 +15,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { EditProfileModal } from "@/components/EditProfileModal";
+import { ChatProfileStats } from "@/components/ChatProfileStats";
 import { HoldToConfirmButton } from "@/components/HoldToConfirmButton";
 
 export default function ProfileScreen() {
@@ -23,6 +24,7 @@ export default function ProfileScreen() {
 
   const user = useQuery(api.users.currentUser);
   const posts = useQuery(api.posts.getPostsByUser, {});
+  const details = useQuery(api.users.getUserProfile, user ? { id: user._id } : "skip");
 
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
 
@@ -109,6 +111,8 @@ export default function ProfileScreen() {
             ) : null}
           </View>
 
+          <Text className="text-grey text-xs mb-3">{user.email}</Text>
+          {details ? <ChatProfileStats stats={details.stats} createdAt={user._creationTime} /> : null}
           {/* Кнопка редагування профілю */}
           <TouchableOpacity
             onPress={() => setIsEditModalVisible(true)}
@@ -174,7 +178,7 @@ export default function ProfileScreen() {
         </View>
       </ScrollView>
 
-      <EditProfileModal
+      {isEditModalVisible ? <EditProfileModal
         visible={isEditModalVisible}
         onClose={() => setIsEditModalVisible(false)}
         user={{
@@ -183,7 +187,7 @@ export default function ProfileScreen() {
           bio: user.bio,
           image: user.image,
         }}
-      />
+      /> : null}
     </View>
   );
 }

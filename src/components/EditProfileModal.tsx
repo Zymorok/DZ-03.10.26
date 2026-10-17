@@ -6,7 +6,7 @@ import { useMutation } from "convex/react";
 import { File } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
 import { fetch } from "expo/fetch";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -40,20 +40,14 @@ export function EditProfileModal({
   const [fullname, setFullname] = useState(user.fullname ?? "");
   const [username, setUsername] = useState(user.username ?? "");
   const [bio, setBio] = useState(user.bio ?? "");
-  const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const selectedImageUri = selectedImage?.uri;
+  const [errorText, setErrorText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Скидаємо/синхронізуємо стан форми з актуальними даними користувача при відкритті вікна
-  useEffect(() => {
-    if (visible) {
-      setFullname(user.fullname ?? "");
-      setUsername(user.username ?? "");
-      setBio(user.bio ?? "");
-      setSelectedImageUri(null);
-    }
-  }, [visible, user.fullname, user.username, user.bio, user.image]);
 
-  const generateUploadUrl = useMutation(api.posts.generateUploadUrl);
+  const generateUploadUrl = useMutation(api.users.generateAvatarUploadUrl);
   const updateUserProfile = useMutation(api.users.updateUserProfile);
 
   // Функція вибору зображення з галереї
@@ -66,7 +60,7 @@ export function EditProfileModal({
     });
 
     if (!result.canceled && result.assets[0].uri) {
-      setSelectedImageUri(result.assets[0].uri);
+      setSelectedImage(result.assets[0]);
     }
   };
 
@@ -88,12 +82,13 @@ export function EditProfileModal({
     });
 
     if (!result.canceled && result.assets[0].uri) {
-      setSelectedImageUri(result.assets[0].uri);
+      setSelectedImage(result.assets[0]);
     }
   };
 
   // Головний селектор вибору джерела фото
   const pickImage = () => {
+    if (Platform.OS === "web") { void pickImageFromLibrary(); return; }
     Alert.alert("Оберіть дію", "Оберіть джерело для фото профілю", [
       {
         text: "Зробити фото",
@@ -111,6 +106,9 @@ export function EditProfileModal({
   };
 
   const handleSave = async () => {
+    setErrorText("");
+    if (!fullname.trim()) { setErrorText("Введіть ім’я."); return; }
+    if (selectedImage && (selectedImage.fileSize ?? 0) > 10 * 1024 * 1024) { setErrorText("Оберіть зображення розміром до 10 МБ."); return; }
     try {
       setIsSubmitting(true);
 
@@ -119,11 +117,13 @@ export function EditProfileModal({
       // Якщо користувач обрав новий аватар — завантажуємо через expo-file-system та expo/fetch
       if (selectedImageUri) {
         const uploadUrl = await generateUploadUrl();
-        const file = new File(selectedImageUri);
+        const file = Platform.OS === "web"
+          ? (selectedImage?.file ?? await (await fetch(selectedImageUri)).blob())
+          : new File(selectedImageUri);
 
         const uploadResult = await fetch(uploadUrl, {
           method: "POST",
-          headers: { "Content-Type": "image/jpeg" },
+          headers: { "Content-Type": selectedImage?.mimeType || file.type || "image/jpeg" },
           body: file,
         });
 
@@ -142,11 +142,11 @@ export function EditProfileModal({
         imageStorageId,
       });
 
-      setSelectedImageUri(null);
+      setSelectedImage(null);
       onClose();
     } catch (error) {
       console.error("Помилка збереження профілю:", error);
-      Alert.alert("Помилка", "Не вдалося зберегти зміни профілю.");
+      setErrorText(error instanceof Error ? error.message.replace(/^[\s\S]*?Uncaught Error: /, "").split("\n")[0] : "Не вдалося зберегти зміни профілю.");
     } finally {
       setIsSubmitting(false);
     }
@@ -160,8 +160,8 @@ export function EditProfileModal({
       onRequestClose={onClose}
     >
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1 justify-end bg-black/60"
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.6)" }}
       >
         <View className="bg-surface border-t border-surfaceLight rounded-t-3xl p-5 max-h-[88%]">
           {/* Хедер модального вікна */}
@@ -170,7 +170,7 @@ export function EditProfileModal({
               <Text className="text-grey text-base">Скасувати</Text>
             </TouchableOpacity>
 
-            <Text className="text-white font-bold text-lg">
+            <Text className="text-white font-bold text-base" style={{ flexShrink: 1, textAlign: "center", marginHorizontal: 8 }}>
               Редагувати профіль
             </Text>
 
@@ -185,7 +185,8 @@ export function EditProfileModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} className="pt-4">
+          <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} className="pt-4">
+            {errorText ? <Text accessibilityLiveRegion="polite" className="text-red-400 mb-3">{errorText}</Text> : null}
             {/* Аватар та кнопка зміни */}
             <View className="items-center mb-6">
               <TouchableOpacity
@@ -222,9 +223,11 @@ export function EditProfileModal({
             <View className="gap-4 pb-10">
               <View>
                 <Text className="text-grey text-xs font-semibold mb-1.5 uppercase">
-                  Повне ім'я
+                  {"Повне ім'я"}
                 </Text>
                 <TextInput
+                  accessibilityLabel="Повне ім’я"
+                  maxLength={100}
                   value={fullname}
                   onChangeText={setFullname}
                   placeholder="Введіть повне ім'я..."
@@ -235,9 +238,11 @@ export function EditProfileModal({
 
               <View>
                 <Text className="text-grey text-xs font-semibold mb-1.5 uppercase">
-                  Ім'я користувача
+                  {"Ім'я користувача"}
                 </Text>
                 <TextInput
+                  accessibilityLabel="Нікнейм"
+                  maxLength={31}
                   value={username}
                   onChangeText={setUsername}
                   autoCapitalize="none"
@@ -252,6 +257,8 @@ export function EditProfileModal({
                   Про себе (Bio)
                 </Text>
                 <TextInput
+                  accessibilityLabel="Про себе"
+                  maxLength={300}
                   value={bio}
                   onChangeText={setBio}
                   multiline

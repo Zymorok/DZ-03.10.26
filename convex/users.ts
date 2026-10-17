@@ -2,7 +2,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 
 /**
  * Запит для отримання профілю поточного авторизованого користувача
@@ -26,7 +26,17 @@ export const currentUser = query({
 export const getUserProfile = query({
   args: { id: v.id("users") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id);
+    if (!(await getAuthUserId(ctx))) return null;
+    const user = await ctx.db.get(args.id);
+    if (!user) return null;
+    const messages = await ctx.db.query("messages").withIndex("by_sender", q => q.eq("senderId", args.id)).collect();
+    const rooms = await ctx.db.query("chatRooms").withIndex("by_creator", q => q.eq("creatorId", args.id)).collect();
+    return {
+      _id: user._id, _creationTime: user._creationTime,
+      name: user.name, fullname: user.fullname, username: user.username,
+      image: user.image, bio: user.bio, followers: user.followers, following: user.following,
+      stats: { messagesCount: messages.length, roomsCreatedCount: rooms.length },
+    };
   },
 });
 
@@ -46,18 +56,40 @@ export const updateUserProfile = mutation({
       throw new Error("Unauthorized: Користувач не авторизований");
     }
 
-    const patchData: any = {};
-    if (args.username !== undefined) patchData.username = args.username.trim();
-    if (args.fullname !== undefined) patchData.fullname = args.fullname.trim();
-    if (args.bio !== undefined) patchData.bio = args.bio.trim();
+    const patchData: Partial<Doc<"users">> = {};
+    if (args.username !== undefined) {
+      const username = args.username.trim().replace(/^@/, "").toLowerCase();
+      if (username && !/^[a-z0-9_]{3,30}$/.test(username))
+        throw new Error("Нікнейм: від 3 до 30 латинських літер, цифр або _");
+      const existing = username ? await ctx.db.query("users").withIndex("by_username", q => q.eq("username", username)).first() : null;
+      if (existing && existing._id !== userId) throw new Error("Цей нікнейм уже зайнятий");
+      patchData.username = username || undefined;
+    }
+    if (args.fullname !== undefined) {
+      const name = args.fullname.trim();
+      if (!name || name.length > 100) throw new Error("Ім’я має містити від 1 до 100 символів");
+      patchData.fullname = name;
+      patchData.name = name;
+    }
+    if (args.bio !== undefined) {
+      if (args.bio.trim().length > 300) throw new Error("Опис має містити до 300 символів");
+      patchData.bio = args.bio.trim();
+    }
 
     if (args.imageStorageId) {
+      const file = await ctx.db.system.get(args.imageStorageId);
+      if (!file || !file.contentType?.startsWith("image/") || file.size > 10 * 1024 * 1024)
+        throw new Error("Оберіть зображення розміром до 10 МБ");
       const imageUrl = await ctx.storage.getUrl(args.imageStorageId);
       if (imageUrl) {
         patchData.image = imageUrl;
+        patchData.avatarStorageId = args.imageStorageId;
       }
     }
 
+    const user = await ctx.db.get(userId);
+    if (patchData.avatarStorageId && user?.avatarStorageId && user.avatarStorageId !== patchData.avatarStorageId)
+      await ctx.storage.delete(user.avatarStorageId);
     await ctx.db.patch(userId, patchData);
     return { success: true };
   },
@@ -66,6 +98,14 @@ export const updateUserProfile = mutation({
 /**
  * Отримує користувачів для стрічки історій (поточний користувач + підписки)
  */
+export const generateAvatarUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    if (!(await getAuthUserId(ctx))) throw new Error("Потрібно увійти в акаунт");
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
 export const getStoriesUsers = query({
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);

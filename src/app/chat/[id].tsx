@@ -25,6 +25,9 @@ import { COLORS } from "@/constants/theme";
 import { ImageViewerModal } from "@/components/ImageViewerModal";
 import { TypingDots } from "@/components/TypingDots";
 
+import { SwipeableMessageItem } from "@/components/SwipeableMessageItem";
+import { ReplyPreviewBar } from "@/components/ReplyPreviewBar";
+
 export default function ChatRoomScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -41,6 +44,7 @@ export default function ChatRoomScreen() {
   const deleteMessage = useMutation(api.messages.deleteMessage);
   const setTyping = useMutation(api.typing.setTyping);
   const [text, setText] = useState("");
+  const [replyTarget, setReplyTarget] = useState<Doc<"messages"> | null>(null);
   const [editing, setEditing] = useState<Doc<"messages"> | null>(null);
   const [selectedImage, setSelectedImage] =
     useState<ImagePicker.ImagePickerAsset | null>(null);
@@ -129,11 +133,13 @@ export default function ChatRoomScreen() {
           chatRoomId,
           storageId: result.storageId,
           caption: content || undefined,
+          replyToId: replyTarget?._id,
         });
         setSelectedImage(null);
       } else {
-        await sendMessage({ chatRoomId, content });
+        await sendMessage({ chatRoomId, content, replyToId: replyTarget?._id });
       }
+      setReplyTarget(null);
       setText("");
       stopTyping();
       Keyboard.dismiss();
@@ -147,15 +153,25 @@ export default function ChatRoomScreen() {
   }
 
   function openActions(message: Doc<"messages">) {
-    if (message.senderId !== user?._id || submitting) return;
+    if (submitting) return;
     Keyboard.dismiss();
     setActionMessage(message);
     setConfirmDelete(false);
     setError("");
   }
 
+  function beginReply(message: Doc<"messages">) {
+    if (submitting) return;
+    if (editing) setText("");
+    setEditing(null);
+    setReplyTarget(message);
+    setActionMessage(null);
+    inputRef.current?.focus();
+  }
+
   function beginEditing() {
     if (!actionMessage) return;
+    setReplyTarget(null);
     setEditing(actionMessage);
     setText(actionMessage.content ?? "");
     setSelectedImage(null);
@@ -258,90 +274,14 @@ export default function ChatRoomScreen() {
             Повідомлень ще немає. Напишіть першим.
           </Text>
         }
-        renderItem={({ item }) => {
-          const own = item.senderId === user?._id;
-          return (
-            <View
-              style={{
-                alignItems: own ? "flex-end" : "flex-start",
-                marginBottom: 12,
-              }}
-            >
-              <TouchableOpacity
-                activeOpacity={0.9}
-                onLongPress={() => openActions(item)}
-                style={{
-                  maxWidth: "85%",
-                  minWidth: 80,
-                  padding: 12,
-                  borderRadius: 16,
-                  backgroundColor: own ? COLORS.primary : COLORS.surface,
-                }}
-              >
-                <View className="flex-row justify-between items-center gap-3">
-                  {!own ? (
-                    <Text className="text-grey font-semibold text-xs mb-1">
-                      {item.senderName}
-                    </Text>
-                  ) : null}
-                  {own ? (
-                    <TouchableOpacity
-                      accessibilityRole="button"
-                      accessibilityLabel="Дії з повідомленням"
-                      testID={`message-actions-${item._id}`}
-                      onPress={() => openActions(item)}
-                      className="self-end ml-auto p-1"
-                    >
-                      <Ionicons
-                        name="ellipsis-horizontal"
-                        size={16}
-                        color="white"
-                      />
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-                {item.imageUrl ? (
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="Відкрити фото"
-                    onPress={() => setFullscreenImage(item.imageUrl!)}
-                    onLongPress={() => openActions(item)}
-                  >
-                    <Image
-                      accessibilityLabel="Фото у повідомленні"
-                      source={{ uri: item.imageUrl }}
-                      resizeMode="cover"
-                      style={{
-                        width: 210,
-                        maxWidth: "100%",
-                        height: 190,
-                        borderRadius: 10,
-                        marginBottom: 6,
-                      }}
-                    />
-                  </TouchableOpacity>
-                ) : null}
-                {item.content ? (
-                  <Text
-                    className="text-white text-base"
-                    style={{ flexShrink: 1 }}
-                  >
-                    {item.content}
-                  </Text>
-                ) : null}
-                <Text className="text-white/70 text-xs text-right mt-2">
-                  {item.isEdited ? "(ред.) " : ""}
-                  {new Date(item._creationTime).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          );
-        }}
+        renderItem={({ item }) => (
+          <SwipeableMessageItem item={item} own={item.senderId === user?._id}
+            onReply={beginReply} onActions={openActions} onImage={setFullscreenImage}
+            onAuthor={authorId => router.push({ pathname: '/user/[id]', params: { id: authorId } })} />
+        )}
       />
       <TypingDots typingUsers={typingUsers ?? []} />
+      {replyTarget ? <ReplyPreviewBar message={replyTarget} onCancel={() => setReplyTarget(null)} /> : null}
       {editing ? (
         <View className="bg-surface flex-row items-center justify-between px-4 py-2">
           <Text className="text-grey text-sm">Редагування повідомлення</Text>
@@ -485,6 +425,10 @@ export default function ChatRoomScreen() {
               </>
             ) : (
               <>
+                <TouchableOpacity accessibilityRole="button" onPress={() => actionMessage && beginReply(actionMessage)} className="py-3">
+                  <Text className="text-white">Відповісти</Text>
+                </TouchableOpacity>
+                {actionMessage?.senderId === user?._id ? <>
                 <TouchableOpacity
                   accessibilityRole="button"
                   onPress={beginEditing}
@@ -499,6 +443,7 @@ export default function ChatRoomScreen() {
                 >
                   <Text className="text-red-400">Видалити</Text>
                 </TouchableOpacity>
+                </> : null}
               </>
             )}
             <TouchableOpacity

@@ -11,10 +11,11 @@ export default defineSchema({
     username: v.optional(v.string()),
     fullname: v.optional(v.string()),
     bio: v.optional(v.string()),
+    avatarStorageId: v.optional(v.id("_storage")),
     followers: v.optional(v.number()),
     following: v.optional(v.number()),
     posts: v.optional(v.number()),
-  }).index("by_email", ["email"]),
+  }).index("by_email", ["email"]).index("by_username", ["username"]),
 
   posts: defineTable({
     userId: v.id("users"),
@@ -80,7 +81,10 @@ export default defineSchema({
     imageUrl: v.optional(v.string()),
     storageId: v.optional(v.id("_storage")),
     isEdited: v.optional(v.boolean()),
-  }).index("by_chat_room", ["chatRoomId"]),
+    replyToId: v.optional(v.id("messages")),
+    replyToSender: v.optional(v.string()),
+    replyToText: v.optional(v.string()),
+  }).index("by_chat_room", ["chatRoomId"]).index("by_sender", ["senderId"]),
 
   typingIndicators: defineTable({
     chatRoomId: v.id("chatRooms"),
