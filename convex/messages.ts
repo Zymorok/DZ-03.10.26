@@ -35,11 +35,15 @@ export const listMessages = query({
     if (!(await getAuthUserId(ctx))) return [];
     const id = ctx.db.normalizeId("chatRooms", args.chatRoomId);
     if (!id || !(await ctx.db.get(id))) return [];
-    return await ctx.db
+    const messages = await ctx.db
       .query("messages")
       .withIndex("by_chat_room", (q) => q.eq("chatRoomId", id))
       .order("asc")
       .collect();
+    return await Promise.all(messages.map(async message => ({
+      ...message,
+      senderPhoto: (await ctx.db.get(message.senderId))?.image,
+    })));
   },
 });
 
